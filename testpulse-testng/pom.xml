@@ -18,7 +18,7 @@
 
     <properties>
         <testng.version>6.14.3</testng.version>
-        <cucumber3.version>3.0.2</cucumber3.version>
+        <cucumber3.version>7.34.4</cucumber3.version>
     </properties>
 
     <dependencies>
