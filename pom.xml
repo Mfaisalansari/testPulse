@@ -64,7 +64,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <okhttp.version>3.14.9</okhttp.version>
+        <okhttp.version>5.4.0</okhttp.version>
         <jackson.version>2.13.5</jackson.version>
         <junit.version>4.13.2</junit.version>
 
