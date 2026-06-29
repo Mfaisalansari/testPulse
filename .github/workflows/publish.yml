@@ -1,0 +1,54 @@
+name: Publish to GitHub Packages
+
+on:
+  release:
+    types: [published]
+
+# Only one publish at a time — concurrent deploys to a Maven repo are unsafe.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          # This sets up ~/.m2/settings.xml with credentials for the
+          # 'github' server id, which the pom's distributionManagement refers to.
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+
+      - name: Set version from release tag
+        id: version
+        run: |
+          # GitHub release tag like 'v0.2.0' → Maven version '0.2.0'
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          mvn -B -ntp versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false
+
+      - name: Build
+        run: mvn -B -ntp -DskipTests clean package
+
+      - name: Publish to GitHub Packages
+        run: mvn -B -ntp -DskipTests deploy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "### Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "Version: \`${{ steps.version.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Repository: https://github.com/${{ github.repository }}/packages" >> "$GITHUB_STEP_SUMMARY"

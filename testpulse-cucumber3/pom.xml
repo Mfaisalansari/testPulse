@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.testpulse</groupId>
+        <artifactId>testpulse-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>testpulse-cucumber3</artifactId>
+    <packaging>jar</packaging>
+
+    <name>TestPulse Cucumber 3 integration</name>
+    <description>Auto-wires TestPulse reporting into a Cucumber 3 framework via @Before/@After hooks and an AspectJ step interceptor.</description>
+
+    <properties>
+        <cucumber3.version>3.0.2</cucumber3.version>
+        <aspectj.version>1.9.7</aspectj.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.testpulse</groupId>
+            <artifactId>testpulse-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Cucumber 3 — provided scope so consumers bring their own version.
+             This module compiles against 3.0.2 but is API-compatible with any 3.x. -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-core</artifactId>
+            <version>${cucumber3.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-java</artifactId>
+            <version>${cucumber3.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- AspectJ runtime — needed for compilation of the aspect.
+             aspectjweaver (the agent) is consumer-side concern. -->
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjrt</artifactId>
+            <version>${aspectj.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-source-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals><goal>jar-no-fork</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals><goal>jar</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
