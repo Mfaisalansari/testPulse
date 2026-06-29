@@ -67,7 +67,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <okhttp.version>3.14.9</okhttp.version>
-        <jackson.version>2.13.5</jackson.version>
+        <jackson.version>2.22.0</jackson.version>
         <junit.version>4.13.2</junit.version>
 
         <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
