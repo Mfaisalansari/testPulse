@@ -18,7 +18,7 @@
 
     <properties>
         <cucumber3.version>3.0.2</cucumber3.version>
-        <aspectj.version>1.9.7</aspectj.version>
+        <aspectj.version>1.9.25.1</aspectj.version>
     </properties>
 
     <dependencies>
