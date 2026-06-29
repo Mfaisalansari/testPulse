@@ -1,0 +1,59 @@
+# Build output
+target/
+build/
+out/
+*.class
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Eclipse
+.project
+.classpath
+.settings/
+.factorypath
+bin/
+
+# VS Code
+.vscode/
+.vscode-test/
+
+# NetBeans
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# Logs and runtime
+*.log
+hs_err_pid*
+
+# TestPulse-specific
+testpulse-fallback.jsonl
+*.testpulse-fallback.jsonl
+
+# Local config (never commit credentials)
+*.env
+.env.local
+secrets.properties
+
+# JaCoCo / coverage
+*.exec
+jacoco.exec
