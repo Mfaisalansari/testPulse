@@ -17,7 +17,7 @@
     <description>Auto-wires TestPulse reporting into a Cucumber 3 framework via @Before/@After hooks and an AspectJ step interceptor.</description>
 
     <properties>
-        <cucumber3.version>3.0.2</cucumber3.version>
+        <cucumber3.version>7.34.4</cucumber3.version>
         <aspectj.version>1.9.7</aspectj.version>
     </properties>
 
