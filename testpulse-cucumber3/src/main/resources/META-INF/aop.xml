@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE aspectj PUBLIC "-//AspectJ//DTD//EN" "http://www.eclipse.org/aspectj/dtd/aspectj.dtd">
+
+<!--
+    Default aop.xml shipped inside testpulse-cucumber3.jar. AspectJ load-time
+    weaving merges all META-INF/aop.xml files on the classpath, so consumers
+    can extend this by providing their own aop.xml with additional <include>
+    rules without replacing what's here.
+
+    For consumers whose step packages don't match the default patterns
+    below, add to their own META-INF/aop.xml on the test classpath:
+
+        <weaver>
+            <include within="com.acme.mysteps..*"/>
+        </weaver>
+
+    AspectJ will OR the includes from both files.
+-->
+<aspectj>
+    <aspects>
+        <aspect name="com.testpulse.cucumber3.StepLoggingAspect"/>
+    </aspects>
+
+    <weaver options="-Xlint:ignore">
+        <!-- Sensible defaults: any package whose name contains "steps",
+             "stepdefs", or "stepdefinitions" anywhere in the path. -->
+        <include within="*..steps..*"/>
+        <include within="*..stepdefs..*"/>
+        <include within="*..stepdefinitions..*"/>
+
+        <!-- Always exclude framework internals — weaving these is slow and
+             produces unpredictable behavior. Consumers should NOT remove
+             these excludes. -->
+        <exclude within="cucumber..*"/>
+        <exclude within="io.cucumber..*"/>
+        <exclude within="org.aspectj..*"/>
+        <exclude within="org.openqa..*"/>
+        <exclude within="org.testng..*"/>
+        <exclude within="org.junit..*"/>
+        <exclude within="com.testpulse..*"/>
+    </weaver>
+</aspectj>
