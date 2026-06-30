@@ -369,6 +369,7 @@ a:hover { text-decoration: underline; }
     padding: 6px 0;
     font-size: 13px;
     line-height: 1.5;
+    font-family: var(--font-mono);
 }
 
 .step-icon {
@@ -383,14 +384,64 @@ a:hover { text-decoration: underline; }
 .step-icon.skip { color: var(--text-tertiary); }
 
 .step-keyword {
-    color: var(--text-secondary);
-    font-weight: 500;
-    min-width: 48px;
+    font-weight: 600;
+    min-width: 52px;
     flex-shrink: 0;
 }
 
-.step-text { flex: 1; min-width: 0; }
+/* Gherkin convention: Given/When/Then have distinct colours, mirrors IDE syntax highlighting */
+.step-keyword.given { color: #6f5fa0; }
+.step-keyword.when  { color: #2d6997; }
+.step-keyword.then  { color: #2d6610; }
+.step-keyword.and,
+.step-keyword.but   { color: var(--text-secondary); }
+
+.step-text {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
 .step-text.fail { color: var(--text-danger); }
+
+/* Quoted values within step text — make them visually pop, like IDE syntax highlighting */
+.step-text .arg {
+    color: #b06400;
+    font-weight: 500;
+}
+
+/* Data tables under a step — render as actual table */
+.step-table {
+    margin-top: 8px;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--bg-primary);
+}
+.step-table th, .step-table td {
+    padding: 4px 10px;
+    border: 0.5px solid var(--border-light);
+    text-align: left;
+}
+.step-table th {
+    background: var(--bg-secondary);
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+/* Doc strings — triple-quoted multi-line text following a step */
+.step-docstring {
+    margin-top: 6px;
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    border-left: 3px solid var(--text-info);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    color: var(--text-secondary);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
 
 .step-dur {
     color: var(--text-tertiary);
