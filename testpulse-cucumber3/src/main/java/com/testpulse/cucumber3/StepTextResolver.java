@@ -49,21 +49,28 @@ final class StepTextResolver {
         }
 
         Object[] args = joinPoint.getArgs();
-        String filled = substitutePlaceholders(info.pattern, args);
+        SubstitutionResult sub = substitutePlaceholders(info.pattern, args);
 
-        // Strip regex anchors that look ugly in display text
-        filled = stripRegexCruft(filled);
+        // Strip regex cruft from the pattern line BEFORE appending leftover args
+        // (DataTables on new lines), so the $ / ^ anchors get cleaned correctly.
+        String patternLine = stripRegexCruft(sub.text);
 
-        // If nothing was substituted and there ARE args, append them so at
+        // If nothing was substituted and there ARE simple args, append them so at
         // least the values are visible (last-resort fallback for exotic patterns)
-        if (filled.equals(stripRegexCruft(info.pattern)) && args.length > 0) {
-            filled = filled + " " + formatArgs(args);
+        if (patternLine.equals(stripRegexCruft(info.pattern)) && args.length > 0 && sub.leftovers.isEmpty()) {
+            patternLine = patternLine + " " + formatArgs(args);
         }
 
-        return info.keyword + " " + filled.trim();
+        // Append complex leftover args (DataTables, doc strings) on new lines —
+        // these become structured markers like [TABLE:...] the UI renders specially.
+        StringBuilder out = new StringBuilder(info.keyword).append(" ").append(patternLine.trim());
+        for (String leftover : sub.leftovers) {
+            out.append("\n").append(leftover);
+        }
+        return out.toString();
     }
 
-    private static String substitutePlaceholders(String pattern, Object[] args) {
+    private static SubstitutionResult substitutePlaceholders(String pattern, Object[] args) {
         Matcher m = PLACEHOLDER_OR_GROUP.matcher(pattern);
         StringBuffer sb = new StringBuffer();
         int idx = 0;
@@ -80,17 +87,135 @@ final class StepTextResolver {
                 m.appendReplacement(sb, Matcher.quoteReplacement(token));
                 continue;
             }
-            String replacement = String.valueOf(args[idx++]);
-            // Cucumber's {string} type strips the surrounding quotes from the
-            // matched text. Add them back when the placeholder was {string}
-            // so the rendered output matches the original Gherkin line.
-            if (token.equals("{string}")) {
-                replacement = "\"" + replacement + "\"";
-            }
+            String replacement = formatArg(args[idx++], token);
             m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
         }
         m.appendTail(sb);
+
+        // Collect leftover args (datatables, doc strings — these typically don't
+        // have placeholders in the pattern, they're attached to the step in Gherkin).
+        java.util.List<String> leftovers = new java.util.ArrayList<String>();
+        while (idx < args.length) {
+            leftovers.add(formatArg(args[idx++], null));
+        }
+        return new SubstitutionResult(sb.toString(), leftovers);
+    }
+
+    private static final class SubstitutionResult {
+        final String text;
+        final java.util.List<String> leftovers;
+
+        SubstitutionResult(String text, java.util.List<String> leftovers) {
+            this.text = text;
+            this.leftovers = leftovers;
+        }
+    }
+
+    /**
+     * Format a single argument for display. Handles DataTable (Cucumber 3),
+     * List-of-List (raw table form), and plain values. DataTable and list-of-
+     * list are emitted as a {@code [TABLE:[[...],[...]]]} marker that the UI
+     * picks up and renders as a real HTML table.
+     */
+    @SuppressWarnings("unchecked")
+    private static String formatArg(Object arg, String placeholder) {
+        if (arg == null) return "null";
+
+        // Cucumber 3 DataTable — use reflection to avoid a hard dependency on
+        // the DataTable class (testpulse-cucumber3 has Cucumber at provided
+        // scope; if it ever changes to optional, this still works).
+        String className = arg.getClass().getName();
+        if ("cucumber.api.DataTable".equals(className)
+                || "io.cucumber.datatable.DataTable".equals(className)) {
+            try {
+                java.lang.reflect.Method rawMethod = arg.getClass().getMethod("raw");
+                Object raw = rawMethod.invoke(arg);
+                if (raw instanceof java.util.List) {
+                    String marker = tableMarker((java.util.List<?>) raw);
+                    if (marker != null) return marker;
+                }
+            } catch (Throwable ignored) {
+                // Fall through to default toString
+            }
+        }
+
+        // List<List<String>> — the form Cucumber gives you if the step def
+        // declares the arg as List<List<String>> instead of DataTable.
+        if (arg instanceof java.util.List) {
+            java.util.List<?> outer = (java.util.List<?>) arg;
+            if (!outer.isEmpty() && outer.get(0) instanceof java.util.List) {
+                String marker = tableMarker(outer);
+                if (marker != null) return marker;
+            }
+            // List<Map<String,String>> — row-as-map form. Convert to rows of
+            // [header, value] pairs flattened to a uniform table.
+            if (!outer.isEmpty() && outer.get(0) instanceof java.util.Map) {
+                String marker = mapListMarker((java.util.List<java.util.Map<String, ?>>) outer);
+                if (marker != null) return marker;
+            }
+        }
+
+        // String value — add quotes back for {string} placeholders so the
+        // displayed text matches the original Gherkin line.
+        String s = String.valueOf(arg);
+        if ("{string}".equals(placeholder)) {
+            return "\"" + s + "\"";
+        }
+        return s;
+    }
+
+    private static String tableMarker(java.util.List<?> rows) {
+        if (rows.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder("[TABLE:[");
+        for (int r = 0; r < rows.size(); r++) {
+            Object row = rows.get(r);
+            if (!(row instanceof java.util.List)) return null;
+            if (r > 0) sb.append(",");
+            sb.append("[");
+            java.util.List<?> cells = (java.util.List<?>) row;
+            for (int c = 0; c < cells.size(); c++) {
+                if (c > 0) sb.append(",");
+                sb.append("\"").append(jsonEscape(String.valueOf(cells.get(c)))).append("\"");
+            }
+            sb.append("]");
+        }
+        sb.append("]]");
         return sb.toString();
+    }
+
+    private static String mapListMarker(java.util.List<java.util.Map<String, ?>> rows) {
+        if (rows.isEmpty()) return null;
+        // Use the first row's keys as the header
+        java.util.Set<String> headers = rows.get(0).keySet();
+        StringBuilder sb = new StringBuilder("[TABLE:[[");
+        boolean first = true;
+        for (String h : headers) {
+            if (!first) sb.append(",");
+            first = false;
+            sb.append("\"").append(jsonEscape(h)).append("\"");
+        }
+        sb.append("]");
+        for (java.util.Map<String, ?> row : rows) {
+            sb.append(",[");
+            first = true;
+            for (String h : headers) {
+                if (!first) sb.append(",");
+                first = false;
+                Object v = row.get(h);
+                sb.append("\"").append(jsonEscape(v == null ? "" : v.toString())).append("\"");
+            }
+            sb.append("]");
+        }
+        sb.append("]]");
+        return sb.toString();
+    }
+
+    private static String jsonEscape(String s) {
+        return s.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 
     private static String stripRegexCruft(String s) {
