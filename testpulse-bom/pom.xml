@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.testpulse</groupId>
+        <artifactId>testpulse-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>testpulse-bom</artifactId>
+    <packaging>pom</packaging>
+
+    <name>TestPulse BOM</name>
+    <description>Bill of Materials for TestPulse. Import this in your project's dependencyManagement to pin every TestPulse module to a single coordinated version.</description>
+
+    <!--
+        Why a BOM:
+
+        Without it, a consumer pinning testpulse-cucumber3 to 0.1.0 and
+        testpulse-testng to 0.2.0 silently produces an unsupported
+        combination — modules might call APIs that no longer exist across
+        the version drift.
+
+        With it, the consumer imports this BOM once at the top of their
+        pom and every TestPulse module they pull in gets the same version.
+        Bumping a release becomes a one-line change.
+    -->
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>testpulse-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>testpulse-cucumber3</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>testpulse-testng</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>testpulse-junit4</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

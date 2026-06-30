@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.testpulse</groupId>
+        <artifactId>testpulse-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>testpulse-testng</artifactId>
+    <packaging>jar</packaging>
+
+    <name>TestPulse TestNG integration</name>
+    <description>Auto-wires TestPulse reporting into a TestNG framework via a ServiceLoader-registered ISuiteListener and a BaseRunner for Cucumber+TestNG setups.</description>
+
+    <properties>
+        <testng.version>6.14.3</testng.version>
+        <cucumber3.version>3.0.2</cucumber3.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.testpulse</groupId>
+            <artifactId>testpulse-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- TestNG — provided scope so consumers bring their own version.
+             6.14.3 is the last 6.x release; this module works with 6.x and 7.x. -->
+        <dependency>
+            <groupId>org.testng</groupId>
+            <artifactId>testng</artifactId>
+            <version>${testng.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- cucumber-testng is only needed to compile BaseRunner. Consumers who
+             use pure TestNG (no Cucumber) can still use the SuiteListener; the
+             BaseRunner class just won't be loaded if cucumber-testng is absent. -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-testng</artifactId>
+            <version>${cucumber3.version}</version>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-source-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals><goal>jar-no-fork</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals><goal>jar</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

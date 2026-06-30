@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TestPulse — Analytics</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body data-page="analytics">
+
+<div id="header"></div>
+
+<div class="page">
+
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+        <div>
+            <h1 class="page-title">Analytics</h1>
+            <p class="page-subtitle">Pass-rate trends, fragility patterns, and flaky scenarios across recent cycles.</p>
+        </div>
+        <div>
+            <select id="days-select" class="filter-input" style="width: auto;">
+                <option value="7">Last 7 days</option>
+                <option value="14" selected>Last 14 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="banner-host"></div>
+
+    <div class="metrics">
+        <div class="metric"><div class="metric-label">Total runs</div><div class="metric-value" id="m-runs">—</div></div>
+        <div class="metric"><div class="metric-label">Overall pass rate</div><div class="metric-value success" id="m-passrate">—</div></div>
+        <div class="metric"><div class="metric-label">LOBs tracked</div><div class="metric-value" id="m-lobs">—</div></div>
+        <div class="metric"><div class="metric-label">Flaky scenarios</div><div class="metric-value warning" id="m-flaky">—</div></div>
+    </div>
+
+    <h2 class="section">Pass rate by LOB × date</h2>
+
+    <div id="heatmap-host">
+        <div class="placeholder">Loading…</div>
+    </div>
+
+    <div class="heat-legend">
+        <span>Pass rate:</span>
+        <span><span class="swatch" style="background: #e24b4a;"></span>&lt;65%</span>
+        <span><span class="swatch" style="background: #f7c1c1;"></span>65–80%</span>
+        <span><span class="swatch" style="background: #fac775;"></span>80–90%</span>
+        <span><span class="swatch" style="background: #c0dd97;"></span>90–97%</span>
+        <span><span class="swatch" style="background: #eaf3de;"></span>&gt;97%</span>
+        <span><span class="swatch" style="background: var(--bg-tertiary);"></span>no run</span>
+    </div>
+
+    <h2 class="section">Flakiest scenarios <span class="muted">— failed at least once in the window</span></h2>
+
+    <div class="table-card" style="padding: 4px 16px;">
+        <div id="flaky-host">
+            <div class="placeholder">Loading…</div>
+        </div>
+    </div>
+
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+(function() {
+    let days = 14;
+
+    function showError(msg) {
+        document.getElementById('banner-host').innerHTML =
+            `<div class="banner error">${TP.escape(msg)}</div>`;
+    }
+
+    function colourFor(rate) {
+        if (rate < 65) return 'h-crit';
+        if (rate < 80) return 'h-fail';
+        if (rate < 90) return 'h-warn';
+        if (rate < 97) return 'h-good';
+        return 'h-pass';
+    }
+
+    function renderHeatmap(cells) {
+        const host = document.getElementById('heatmap-host');
+        if (cells.length === 0) {
+            host.innerHTML = `<div class="placeholder">
+                <strong>No data in this window.</strong><br>
+                No runs with scenarios recorded in the last ${days} days.
+            </div>`;
+            return;
+        }
+        const lobs = Array.from(new Set(cells.map(c => c.lob))).sort();
+        const dates = Array.from(new Set(cells.map(c => c.date))).sort();
+        const grid = {};
+        cells.forEach(c => {
+            if (!grid[c.lob]) grid[c.lob] = {};
+            grid[c.lob][c.date] = c;
+        });
+
+        const cols = dates.length;
+        const dateLabels = dates.map(d => {
+            const parts = d.split('-');
+            return `<div style="font-size: 10px; color: var(--text-tertiary); text-align: center;">${parts[1]}/${parts[2]}</div>`;
+        }).join('');
+
+        let html = `<div class="heatgrid" style="grid-template-columns: 140px repeat(${cols}, 1fr);">`;
+        html += '<div></div>' + dateLabels;
+        lobs.forEach(lob => {
+            html += `<div class="heatcell label">${TP.escape(lob)}</div>`;
+            dates.forEach(date => {
+                const cell = grid[lob][date];
+                if (!cell) {
+                    html += `<div class="heatcell h-none">—</div>`;
+                } else {
+                    const cls = colourFor(cell.passRate);
+                    const tip = `${cell.passed}/${cell.total} passed (${cell.passRate}%) on ${date}`;
+                    html += `<div class="heatcell ${cls}" title="${TP.escape(tip)}">${Math.round(cell.passRate)}</div>`;
+                }
+            });
+        });
+        html += '</div>';
+        host.innerHTML = html;
+
+        document.getElementById('m-lobs').textContent = lobs.length;
+        let totalPassed = 0, totalRuns = 0;
+        cells.forEach(c => { totalPassed += c.passed; totalRuns += c.total; });
+        document.getElementById('m-passrate').textContent =
+            totalRuns === 0 ? '—' : Math.round(100 * totalPassed / totalRuns) + '%';
+    }
+
+    function renderFlakyFromTrend(trend) {
+        // trend.series = { lob: [ {runId, at, passRate, total}, ... ] }
+        // Without per-scenario history server-side, we approximate "flaky" as
+        // LOBs whose pass rate swings most — useful signal but not exact.
+        // The proper version needs a /api/analytics/flaky-scenarios endpoint;
+        // until then we list LOBs whose worst run was below 80%.
+        const series = trend.series || {};
+        const rows = [];
+        Object.keys(series).forEach(lob => {
+            const points = series[lob] || [];
+            if (points.length === 0) return;
+            const rates = points.map(p => p.passRate);
+            const min = Math.min(...rates);
+            const max = Math.max(...rates);
+            const swing = max - min;
+            const failedRuns = points.filter(p => p.passRate < 100).length;
+            if (failedRuns > 0) {
+                rows.push({ lob, min, max, swing, failedRuns, totalRuns: points.length });
+            }
+        });
+        rows.sort((a, b) => b.swing - a.swing || b.failedRuns - a.failedRuns);
+
+        const host = document.getElementById('flaky-host');
+        if (rows.length === 0) {
+            host.innerHTML = `<div class="placeholder">
+                <strong>No flaky LOBs in this window.</strong><br>
+                Every LOB has stable pass rates across recent runs.
+            </div>`;
+            document.getElementById('m-flaky').textContent = '0';
+            return;
+        }
+
+        const html = rows.slice(0, 10).map(r => `
+            <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 0.5px solid var(--border-light); font-size: 13px;">
+                <span style="color: var(--text-danger); font-weight: 500; min-width: 50px;">${r.failedRuns}/${r.totalRuns}</span>
+                <span style="flex: 1; min-width: 0; font-weight: 500;">${TP.escape(r.lob)}</span>
+                <div class="bar-track" style="max-width: 140px; flex: 1;">
+                    <div class="bar-fail" style="width: ${Math.min(100, r.swing)}%;"></div>
+                </div>
+                <span style="color: var(--text-tertiary); font-size: 11px; min-width: 80px; text-align: right;">
+                    swing ${Math.round(r.swing)}%
+                </span>
+            </div>
+        `).join('');
+        host.innerHTML = html;
+        document.getElementById('m-flaky').textContent = rows.length;
+    }
+
+    async function load() {
+        try {
+            const [heat, trend] = await Promise.all([
+                TP.getHeatmap(days),
+                TP.getTrend(days),
+            ]);
+            renderHeatmap(heat.cells || []);
+            renderFlakyFromTrend(trend || {});
+
+            // Total runs metric — count distinct runIds in trend
+            const seenRuns = new Set();
+            Object.values(trend.series || {}).forEach(points => {
+                points.forEach(p => seenRuns.add(p.runId));
+            });
+            document.getElementById('m-runs').textContent = seenRuns.size;
+        } catch (e) {
+            showError('Failed to load analytics: ' + e.message);
+        }
+    }
+
+    document.getElementById('days-select').addEventListener('change', e => {
+        days = parseInt(e.target.value, 10);
+        document.getElementById('heatmap-host').innerHTML = '<div class="placeholder">Loading…</div>';
+        document.getElementById('flaky-host').innerHTML = '<div class="placeholder">Loading…</div>';
+        load();
+    });
+
+    load();
+})();
+</script>
+
+</body>
+</html>

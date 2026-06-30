@@ -1,0 +1,7 @@
+# TestPulse API keys
+# Format: apiKey,userId,displayName,role
+# Lines starting with # are ignored.
+# Copy this to config/api-keys.csv and add real keys.
+apiKey,userId,displayName,role
+k_dev_local_change_me,dev,Local Dev,admin
+k_ci_change_me,ci,CI Pipeline,ci

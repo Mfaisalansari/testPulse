@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TestPulse — Run detail</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body data-page="runs">
+
+<div id="header"></div>
+
+<div class="page">
+
+    <div class="breadcrumb">
+        <a href="/">Runs</a>
+        <span style="margin: 0 4px;">›</span>
+        <span id="bc-id">…</span>
+    </div>
+
+    <div id="banner-host"></div>
+
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px;">
+        <div style="min-width: 0; flex: 1;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <h1 class="page-title" id="run-title" style="margin: 0;">Loading…</h1>
+                <span id="run-status"></span>
+            </div>
+            <div id="run-meta" style="font-size: 13px; color: var(--text-secondary); margin-top: 8px; display: flex; flex-wrap: wrap; gap: 14px;"></div>
+        </div>
+    </div>
+
+    <div class="metrics">
+        <div class="metric"><div class="metric-label">Scenarios</div><div class="metric-value" id="m-total">—</div></div>
+        <div class="metric"><div class="metric-label">Passed</div><div class="metric-value success" id="m-passed">—</div></div>
+        <div class="metric"><div class="metric-label">Failed</div><div class="metric-value danger" id="m-failed">—</div></div>
+        <div class="metric"><div class="metric-label">Avg duration</div><div class="metric-value" id="m-avg">—</div></div>
+    </div>
+
+    <div class="filters" id="scenario-filters">
+        <span class="filter-pill active" data-status="">All <span class="count" id="c-all">0</span></span>
+        <span class="filter-pill" data-status="failed">Failed <span class="count" id="c-failed">0</span></span>
+        <span class="filter-pill" data-status="passed">Passed <span class="count" id="c-passed">0</span></span>
+        <span class="filter-pill" data-status="running">Running <span class="count" id="c-running">0</span></span>
+    </div>
+
+    <div class="table-card" id="scenarios-card">
+        <div id="scenarios-body">
+            <div class="placeholder">Loading…</div>
+        </div>
+    </div>
+
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+(function() {
+    const runId = TP.qsParam('id');
+    if (!runId) {
+        document.body.innerHTML = '<div class="page"><div class="banner error">No run ID supplied.</div></div>';
+        return;
+    }
+
+    const state = {
+        run: null,
+        scenarios: [],
+        stepsByScenario: {},      // scenarioId -> array of step records
+        expandedScenarios: new Set(),
+        statusFilter: '',
+    };
+
+    function showError(msg) {
+        document.getElementById('banner-host').innerHTML =
+            `<div class="banner error">${TP.escape(msg)}</div>`;
+    }
+
+    function renderHeader() {
+        const r = state.run;
+        if (!r) return;
+        document.getElementById('bc-id').textContent = r.id;
+        document.getElementById('run-status').innerHTML = TP.statusPill(r.status);
+
+        // Find LOBs from scenarios
+        const lobs = new Set();
+        state.scenarios.forEach(s => { if (s.lob) lobs.add(s.lob); });
+        const lobText = lobs.size === 0 ? '—' : Array.from(lobs).join(', ');
+        document.getElementById('run-title').textContent = lobText + ' regression';
+
+        const meta = document.getElementById('run-meta');
+        meta.innerHTML = `
+            <span>📂 ${TP.escape(r.division || '—')}</span>
+            <span>🏷 ${TP.escape(r.release || '—')}</span>
+            <span>👤 ${TP.escape(r.user || '—')}</span>
+            <span>🌿 ${TP.escape(r.environment || '—')}</span>
+            <span>⏱ ${TP.duration(r.durationMs)} ${r.status === 'running' ? 'elapsed' : ''}</span>
+            <span class="mono" style="font-size: 11px;">${TP.escape(r.id)}</span>
+        `;
+    }
+
+    function renderMetrics() {
+        const total = state.scenarios.length;
+        const counts = { passed: 0, failed: 0, running: 0, skipped: 0 };
+        let totalDur = 0, finishedCount = 0;
+        state.scenarios.forEach(s => {
+            const st = (s.status || '').toLowerCase();
+            if (counts[st] !== undefined) counts[st] += 1;
+            if (s.durationMs > 0) {
+                totalDur += s.durationMs;
+                finishedCount += 1;
+            }
+        });
+        document.getElementById('m-total').textContent = total;
+        document.getElementById('m-passed').textContent = counts.passed;
+        document.getElementById('m-failed').textContent = counts.failed;
+        document.getElementById('m-avg').textContent =
+            finishedCount === 0 ? '—' : TP.duration(totalDur / finishedCount);
+
+        document.getElementById('c-all').textContent = total;
+        document.getElementById('c-failed').textContent = counts.failed;
+        document.getElementById('c-passed').textContent = counts.passed;
+        document.getElementById('c-running').textContent = counts.running;
+    }
+
+    function setStatusFilter(val) {
+        state.statusFilter = val;
+        document.querySelectorAll('#scenario-filters [data-status]').forEach(el => {
+            el.classList.toggle('active', el.getAttribute('data-status') === val);
+        });
+        renderScenarios();
+    }
+
+    function renderStep(step) {
+        const st = (step.status || '').toLowerCase();
+        const iconCls = st === 'passed' ? 'pass' : (st === 'failed' ? 'fail' : 'skip');
+        const icon = st === 'passed' ? '✓' : (st === 'failed' ? '✕' : '○');
+        const text = step.stepText || '';
+        // Split "Given user logs in" → keyword "Given" + rest
+        const parts = text.match(/^(Given|When|Then|And|But)\s+(.*)$/i);
+        const keyword = parts ? parts[1] : '';
+        const rest = parts ? parts[2] : text;
+
+        let stackTrace = '';
+        if (step.errorStackTrace) {
+            stackTrace = `<div class="stack-trace">${TP.escape(step.errorStackTrace)}</div>`;
+        }
+
+        return `
+            <div class="step">
+                <span class="step-icon ${iconCls}">${icon}</span>
+                <span class="step-keyword">${TP.escape(keyword)}</span>
+                <div class="step-text ${st === 'failed' ? 'fail' : ''}">
+                    ${TP.escape(rest)}
+                    ${stackTrace}
+                </div>
+                <span class="step-dur">${TP.duration(step.durationMs)}</span>
+            </div>
+        `;
+    }
+
+    async function toggleScenario(scenarioId) {
+        const isExpanded = state.expandedScenarios.has(scenarioId);
+        if (isExpanded) {
+            state.expandedScenarios.delete(scenarioId);
+        } else {
+            state.expandedScenarios.add(scenarioId);
+            if (!state.stepsByScenario[scenarioId]) {
+                try {
+                    const data = await TP.getSteps(scenarioId);
+                    state.stepsByScenario[scenarioId] = data.steps || [];
+                } catch (e) {
+                    state.stepsByScenario[scenarioId] = [];
+                    console.warn('Failed to load steps:', e);
+                }
+            }
+        }
+        renderScenarios();
+    }
+
+    function renderScenarioCard(s) {
+        const expanded = state.expandedScenarios.has(s.id);
+        const chevron = expanded ? '▾' : '▸';
+        const steps = state.stepsByScenario[s.id] || [];
+
+        let stepsHtml = '';
+        if (expanded) {
+            if (steps.length === 0) {
+                stepsHtml = `
+                    <div class="scenario-body">
+                        <div style="padding: 16px 0; color: var(--text-tertiary); font-size: 13px;">
+                            No steps logged for this scenario. ${(s.status || '').toLowerCase() === 'running'
+                                ? 'Still running — steps will appear as they complete.'
+                                : 'AspectJ load-time weaving may not be active. See MIGRATION.md.'}
+                        </div>
+                    </div>
+                `;
+            } else {
+                stepsHtml = `<div class="scenario-body">${steps.map(renderStep).join('')}</div>`;
+            }
+        }
+
+        const card = document.createElement('div');
+        card.className = 'scenario-card';
+        card.innerHTML = `
+            <div class="scenario-head" data-sid="${s.id}">
+                <span style="color: var(--text-tertiary); width: 14px; display: inline-block;">${chevron}</span>
+                ${TP.statusPill(s.status)}
+                <span class="name">${TP.escape(s.name || '—')}</span>
+                <span class="meta">${TP.escape(s.cucumberId || '')}</span>
+                <span class="dur">${TP.duration(s.durationMs)}</span>
+            </div>
+            ${stepsHtml}
+        `;
+        card.querySelector('.scenario-head').addEventListener('click', () => toggleScenario(s.id));
+        return card;
+    }
+
+    function renderScenarios() {
+        const filtered = state.scenarios.filter(s => {
+            if (!state.statusFilter) return true;
+            return (s.status || '').toLowerCase() === state.statusFilter;
+        });
+        const body = document.getElementById('scenarios-body');
+        if (filtered.length === 0) {
+            body.innerHTML = `<div class="placeholder">
+                ${state.scenarios.length === 0
+                    ? '<strong>No scenarios yet.</strong><br>This run may still be initialising.'
+                    : 'No scenarios match the current filter.'}
+            </div>`;
+            return;
+        }
+        body.innerHTML = '';
+        filtered.forEach(s => body.appendChild(renderScenarioCard(s)));
+    }
+
+    async function load() {
+        try {
+            const data = await TP.getRun(runId);
+            state.run = data.run;
+            state.scenarios = data.scenarios || [];
+            renderHeader();
+            renderMetrics();
+            renderScenarios();
+        } catch (e) {
+            showError('Failed to load run: ' + e.message);
+        }
+    }
+
+    /* SSE — live step/scenario events for this specific run */
+    function subscribeLive() {
+        TP.subscribe(runId, {
+            'scenario.started': (data) => {
+                if (!state.scenarios.find(s => s.id === data.id)) {
+                    state.scenarios.push(data);
+                    renderMetrics();
+                    renderScenarios();
+                }
+            },
+            'scenario.finished': (data) => {
+                const idx = state.scenarios.findIndex(s => s.id === data.id);
+                if (idx >= 0) {
+                    state.scenarios[idx] = { ...state.scenarios[idx], ...data };
+                    renderMetrics();
+                    renderScenarios();
+                }
+            },
+            'step.logged': (data) => {
+                const sid = data.scenarioId;
+                if (!state.stepsByScenario[sid]) state.stepsByScenario[sid] = [];
+                // Avoid duplicates if both REST and SSE deliver
+                if (!state.stepsByScenario[sid].find(x => x.id === data.id)) {
+                    state.stepsByScenario[sid].push(data);
+                    if (state.expandedScenarios.has(sid)) renderScenarios();
+                }
+            },
+            'run.finished': (data) => {
+                state.run = { ...state.run, ...data };
+                renderHeader();
+                renderMetrics();
+            },
+        });
+    }
+
+    document.querySelectorAll('#scenario-filters [data-status]').forEach(el => {
+        el.addEventListener('click', () => setStatusFilter(el.getAttribute('data-status')));
+    });
+
+    load().then(subscribeLive);
+})();
+</script>
+
+</body>
+</html>

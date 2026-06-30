@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TestPulse — Runs</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body data-page="runs">
+
+<div id="header"></div>
+
+<div class="page">
+
+    <h1 class="page-title">Recent runs</h1>
+    <p class="page-subtitle">Live view of test executions reported to TestPulse. Click any row for scenario detail.</p>
+
+    <div id="banner-host"></div>
+
+    <div class="metrics" id="metrics">
+        <div class="metric"><div class="metric-label">Total runs</div><div class="metric-value" id="m-total">—</div></div>
+        <div class="metric"><div class="metric-label">Pass rate</div><div class="metric-value success" id="m-passrate">—</div></div>
+        <div class="metric"><div class="metric-label">Running now</div><div class="metric-value info" id="m-running">—</div></div>
+        <div class="metric"><div class="metric-label">Failed runs</div><div class="metric-value danger" id="m-failed">—</div></div>
+    </div>
+
+    <div class="filters" id="status-filters">
+        <span class="filter-pill active" data-status="">All <span class="count" id="c-all">0</span></span>
+        <span class="filter-pill" data-status="running">Running <span class="count" id="c-running">0</span></span>
+        <span class="filter-pill" data-status="failed">Failed <span class="count" id="c-failed">0</span></span>
+        <span class="filter-pill" data-status="passed">Passed <span class="count" id="c-passed">0</span></span>
+        <span class="filter-pill" data-status="empty">Empty <span class="count" id="c-empty">0</span></span>
+        <span class="filter-spacer"></span>
+        <input class="filter-input" id="search-input" placeholder="Filter by release, user, division…">
+    </div>
+
+    <div class="filters" id="lob-filters">
+        <span class="filter-pill active" data-lob="">All LOBs</span>
+    </div>
+
+    <div class="table-card">
+        <div class="table-head" style="grid-template-columns: 100px 1fr 100px 110px 90px 80px;">
+            <span>Status</span>
+            <span>Run</span>
+            <span>Release</span>
+            <span>Pass rate</span>
+            <span>Duration</span>
+            <span>Started</span>
+        </div>
+        <div id="runs-body">
+            <div class="placeholder">Loading runs…</div>
+        </div>
+    </div>
+
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+(function() {
+    const state = {
+        runs: [],
+        lobByRunId: {},     // runId -> Set of LOBs from scenarios
+        statusFilter: '',
+        lobFilter: '',
+        searchTerm: '',
+    };
+
+    function showError(msg) {
+        document.getElementById('banner-host').innerHTML =
+            `<div class="banner error">${TP.escape(msg)}</div>`;
+    }
+
+    function updateMetrics() {
+        const counts = { '': 0, running: 0, failed: 0, passed: 0, empty: 0 };
+        let totalScenarios = 0, passedScenarios = 0;
+        state.runs.forEach(r => {
+            counts[''] += 1;
+            const s = (r.status || '').toLowerCase();
+            if (counts[s] !== undefined) counts[s] += 1;
+            totalScenarios += (r.scenariosTotal || 0);
+            passedScenarios += (r.scenariosPassed || 0);
+        });
+        document.getElementById('m-total').textContent = counts[''];
+        document.getElementById('m-running').textContent = counts.running;
+        document.getElementById('m-failed').textContent = counts.failed;
+        document.getElementById('m-passrate').textContent =
+            totalScenarios === 0 ? '—' : Math.round(100 * passedScenarios / totalScenarios) + '%';
+        Object.keys(counts).forEach(k => {
+            const el = document.getElementById('c-' + (k || 'all'));
+            if (el) el.textContent = counts[k];
+        });
+    }
+
+    function updateLobFilters() {
+        const lobs = new Set();
+        Object.values(state.lobByRunId).forEach(set => set.forEach(l => lobs.add(l)));
+        const host = document.getElementById('lob-filters');
+        const existing = host.querySelectorAll('[data-lob]');
+        const have = new Set(Array.from(existing).map(e => e.getAttribute('data-lob')));
+        Array.from(lobs).sort().forEach(lob => {
+            if (have.has(lob)) return;
+            const pill = TP.el('span', {
+                class: 'filter-pill',
+                'data-lob': lob,
+                onclick: () => setLobFilter(lob),
+            }, lob);
+            host.appendChild(pill);
+        });
+    }
+
+    function setStatusFilter(val) {
+        state.statusFilter = val;
+        document.querySelectorAll('#status-filters [data-status]').forEach(el => {
+            el.classList.toggle('active', el.getAttribute('data-status') === val);
+        });
+        renderRuns();
+    }
+
+    function setLobFilter(val) {
+        state.lobFilter = val;
+        document.querySelectorAll('#lob-filters [data-lob]').forEach(el => {
+            el.classList.toggle('active', el.getAttribute('data-lob') === val);
+        });
+        renderRuns();
+    }
+
+    function filteredRuns() {
+        return state.runs.filter(r => {
+            if (state.statusFilter && (r.status || '').toLowerCase() !== state.statusFilter) return false;
+            if (state.lobFilter) {
+                const lobs = state.lobByRunId[r.id];
+                if (!lobs || !lobs.has(state.lobFilter)) return false;
+            }
+            if (state.searchTerm) {
+                const t = state.searchTerm.toLowerCase();
+                const hay = `${r.release || ''} ${r.user || ''} ${r.division || ''} ${r.environment || ''} ${r.id || ''}`.toLowerCase();
+                if (!hay.includes(t)) return false;
+            }
+            return true;
+        });
+    }
+
+    function renderRunRow(run) {
+        const total = run.scenariosTotal || 0;
+        const passed = run.scenariosPassed || 0;
+        const failed = run.scenariosFailed || 0;
+        const passPct = total === 0 ? 0 : (passed / total) * 100;
+        const failPct = total === 0 ? 0 : (failed / total) * 100;
+        const lobs = state.lobByRunId[run.id];
+        const lobText = lobs && lobs.size > 0
+            ? Array.from(lobs).slice(0, 3).join(', ') + (lobs.size > 3 ? ' +' + (lobs.size - 3) : '')
+            : '—';
+
+        const row = TP.el('div', {
+            class: 'table-row',
+            style: 'grid-template-columns: 100px 1fr 100px 110px 90px 80px;',
+            onclick: () => { window.location.href = `/run.html?id=${encodeURIComponent(run.id)}`; },
+        });
+
+        row.innerHTML = `
+            ${TP.statusPill(run.status)}
+            <div style="min-width:0;">
+                <div style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${TP.escape(lobText)}
+                </div>
+                <div class="mono" style="color: var(--text-tertiary);">
+                    ${TP.escape(run.id)} · ${TP.escape(run.division || '—')} · ${TP.escape(run.user || '—')}
+                </div>
+            </div>
+            <div>${TP.escape(run.release || '—')}</div>
+            <div>
+                <div style="font-size: 12px; margin-bottom: 4px;">${passed} / ${total}</div>
+                <div class="bar-track">
+                    <div class="bar-pass" style="width: ${passPct.toFixed(1)}%;"></div>
+                    <div class="bar-fail" style="right: 0; width: ${failPct.toFixed(1)}%;"></div>
+                </div>
+            </div>
+            <div>${TP.duration(run.durationMs)}</div>
+            <div style="color: var(--text-tertiary);">${TP.timeAgo(run.createdAt)}</div>
+        `;
+        return row;
+    }
+
+    function renderRuns() {
+        const body = document.getElementById('runs-body');
+        const list = filteredRuns();
+        if (list.length === 0) {
+            body.innerHTML = `<div class="placeholder">
+                <strong>No runs match the current filters.</strong><br>
+                ${state.runs.length === 0
+                    ? 'Run your tests with -Dtestpulse.enabled=true to start populating data.'
+                    : 'Try clearing filters above.'}
+            </div>`;
+            return;
+        }
+        body.innerHTML = '';
+        list.forEach(r => body.appendChild(renderRunRow(r)));
+    }
+
+    async function loadRuns() {
+        try {
+            const data = await TP.listRuns({ limit: 100 });
+            state.runs = data.runs || [];
+            // Fetch LOBs for each run (one extra call per run — fine at < 100 runs)
+            await Promise.all(state.runs.slice(0, 50).map(async run => {
+                try {
+                    const detail = await TP.getRun(run.id);
+                    const lobs = new Set();
+                    (detail.scenarios || []).forEach(s => { if (s.lob) lobs.add(s.lob); });
+                    state.lobByRunId[run.id] = lobs;
+                } catch (e) {
+                    state.lobByRunId[run.id] = new Set();
+                }
+            }));
+            updateMetrics();
+            updateLobFilters();
+            renderRuns();
+        } catch (e) {
+            showError('Failed to load runs: ' + e.message);
+        }
+    }
+
+    /* SSE — live updates */
+    function subscribeLive() {
+        TP.subscribe('global', {
+            'run.created': (data) => {
+                if (!state.runs.find(r => r.id === data.id)) {
+                    state.runs.unshift(data);
+                    state.lobByRunId[data.id] = new Set();
+                    updateMetrics();
+                    renderRuns();
+                }
+            },
+            'run.finished': (data) => {
+                const idx = state.runs.findIndex(r => r.id === data.id);
+                if (idx >= 0) {
+                    state.runs[idx] = { ...state.runs[idx], ...data };
+                    updateMetrics();
+                    renderRuns();
+                }
+            },
+            'scenario.started': (data) => {
+                if (!state.lobByRunId[data.runId]) state.lobByRunId[data.runId] = new Set();
+                if (data.lob) {
+                    state.lobByRunId[data.runId].add(data.lob);
+                    updateLobFilters();
+                    renderRuns();
+                }
+            },
+        });
+    }
+
+    /* Wire status filter clicks */
+    document.querySelectorAll('#status-filters [data-status]').forEach(el => {
+        el.addEventListener('click', () => setStatusFilter(el.getAttribute('data-status')));
+    });
+
+    /* Wire LOB "All" pill */
+    document.querySelector('#lob-filters [data-lob=""]').addEventListener('click', () => setLobFilter(''));
+
+    /* Wire search */
+    document.getElementById('search-input').addEventListener('input', e => {
+        state.searchTerm = e.target.value.trim();
+        renderRuns();
+    });
+
+    /* Refresh time-ago labels every 30s */
+    setInterval(() => renderRuns(), 30000);
+
+    loadRuns().then(subscribeLive);
+})();
+</script>
+
+</body>
+</html>
