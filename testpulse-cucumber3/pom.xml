@@ -77,6 +77,33 @@
                     </execution>
                 </executions>
             </plugin>
+          <plugin>
+            <groupId>dev.aspectj</groupId>
+            <artifactId>aspectj-maven-plugin</artifactId>
+            <version>1.14</version>
+
+            <configuration>
+                <complianceLevel>8</complianceLevel>
+                <source>8</source>
+                <target>8</target>
+
+                <showWeaveInfo>true</showWeaveInfo>
+                <verbose>true</verbose>
+
+                <forceAjcCompile>true</forceAjcCompile>
+
+                <Xlint>ignore</Xlint>
+            </configuration>
+
+            <executions>
+                <execution>
+                    <goals>
+                        <goal>compile</goal>
+                        <goal>test-compile</goal>
+                    </goals>
+                </execution>
+            </executions>
+        </plugin>
         </plugins>
     </build>
 </project>
