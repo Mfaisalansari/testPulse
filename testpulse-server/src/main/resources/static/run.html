@@ -141,31 +141,38 @@
         const restRaw = parts ? parts[2] : text;
         const keywordLower = keyword.toLowerCase();
 
-        // Highlight quoted values and numbers within the text — visual emphasis
-        // on the data that varies between runs of the same scenario.
-        let restHtml = TP.escape(restRaw);
-        restHtml = restHtml.replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="arg">$1</span>');
-        restHtml = restHtml.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="arg">$1</span>');
-
-        // Detect data tables — pattern "Given the following users: [[name, age], [alice, 30]]"
-        // or "[DataTable{rows=[[h1, h2], [v1, v2]]}]" depending on toString form.
+        // Detect [TABLE:[[...],[...]]] marker emitted by the library's
+        // StepTextResolver when a DataTable or List<List<String>> arg was
+        // passed. The marker contains a JSON array; render it as an HTML table.
         let tableHtml = '';
-        const tableMatch = restRaw.match(/\[\[(.+?)\]\]/);
+        let textWithoutTable = restRaw;
+        const tableMatch = restRaw.match(/\[TABLE:(\[\[.*?\]\])\]/s);
         if (tableMatch) {
-            const tableData = parseDataTable(restRaw);
-            if (tableData) {
-                tableHtml = renderDataTable(tableData);
-                // Strip the table data from the main text so it's not duplicated
-                restHtml = TP.escape(restRaw.split(/\[\[/)[0]).trim();
+            try {
+                const rows = JSON.parse(tableMatch[1]);
+                if (Array.isArray(rows) && rows.length > 0) {
+                    tableHtml = renderDataTable(rows);
+                    textWithoutTable = restRaw.replace(tableMatch[0], '').trim();
+                }
+            } catch (e) {
+                console.warn('Failed to parse table marker:', e);
             }
         }
 
-        // Detect doc strings — triple-quoted blocks captured as a single arg
+        // Highlight quoted values and bare numbers in the remaining text
+        let restHtml = TP.escape(textWithoutTable);
+        restHtml = restHtml.replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="arg">$1</span>');
+        restHtml = restHtml.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="arg">$1</span>');
+
+        // Doc strings — multi-line content following a step (rendered as code block)
         let docHtml = '';
-        const docMatch = restRaw.match(/\[\s*"""([\s\S]*?)"""\s*\]$/);
-        if (docMatch) {
-            docHtml = `<pre class="step-docstring">${TP.escape(docMatch[1].trim())}</pre>`;
-            restHtml = TP.escape(restRaw.replace(docMatch[0], '').trim());
+        // Detect a multi-line tail that wasn't a table — treat as doc string
+        const lines = textWithoutTable.split('\n');
+        if (lines.length > 1) {
+            restHtml = TP.escape(lines[0]);
+            restHtml = restHtml.replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="arg">$1</span>');
+            const rest = lines.slice(1).join('\n').trim();
+            if (rest) docHtml = `<pre class="step-docstring">${TP.escape(rest)}</pre>`;
         }
 
         let stackTrace = '';
@@ -188,32 +195,12 @@
         `;
     }
 
-    /* Parse "[[col1, col2], [v1, v2], [v3, v4]]" into rows array.
-     * Returns null if the format isn't parseable as a clean table. */
-    function parseDataTable(text) {
-        const m = text.match(/\[\[(.+?)\]\]$/);
-        if (!m) return null;
-        try {
-            // Split inner by "], [" to get rows
-            const inner = m[1];
-            const rows = inner.split(/\]\s*,\s*\[/).map(row =>
-                row.split(/\s*,\s*/).map(cell => cell.trim())
-            );
-            // Sanity check — all rows should have the same column count
-            if (rows.length < 2) return null;
-            const cols = rows[0].length;
-            if (!rows.every(r => r.length === cols)) return null;
-            return rows;
-        } catch (e) {
-            return null;
-        }
-    }
-
     function renderDataTable(rows) {
+        if (!rows || rows.length === 0) return '';
         const [header, ...body] = rows;
-        const thead = '<tr>' + header.map(c => `<th>${TP.escape(c)}</th>`).join('') + '</tr>';
+        const thead = '<tr>' + header.map(c => `<th>${TP.escape(String(c))}</th>`).join('') + '</tr>';
         const tbody = body.map(row =>
-            '<tr>' + row.map(c => `<td>${TP.escape(c)}</td>`).join('') + '</tr>'
+            '<tr>' + row.map(c => `<td>${TP.escape(String(c))}</td>`).join('') + '</tr>'
         ).join('');
         return `<table class="step-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
     }
