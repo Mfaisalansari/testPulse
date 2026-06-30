@@ -134,10 +134,39 @@
         const iconCls = st === 'passed' ? 'pass' : (st === 'failed' ? 'fail' : 'skip');
         const icon = st === 'passed' ? '✓' : (st === 'failed' ? '✕' : '○');
         const text = step.stepText || '';
-        // Split "Given user logs in" → keyword "Given" + rest
-        const parts = text.match(/^(Given|When|Then|And|But)\s+(.*)$/i);
+
+        // Parse "Given|When|Then|And|But  <rest>"
+        const parts = text.match(/^(Given|When|Then|And|But)\s+(.*)$/is);
         const keyword = parts ? parts[1] : '';
-        const rest = parts ? parts[2] : text;
+        const restRaw = parts ? parts[2] : text;
+        const keywordLower = keyword.toLowerCase();
+
+        // Highlight quoted values and numbers within the text — visual emphasis
+        // on the data that varies between runs of the same scenario.
+        let restHtml = TP.escape(restRaw);
+        restHtml = restHtml.replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="arg">$1</span>');
+        restHtml = restHtml.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="arg">$1</span>');
+
+        // Detect data tables — pattern "Given the following users: [[name, age], [alice, 30]]"
+        // or "[DataTable{rows=[[h1, h2], [v1, v2]]}]" depending on toString form.
+        let tableHtml = '';
+        const tableMatch = restRaw.match(/\[\[(.+?)\]\]/);
+        if (tableMatch) {
+            const tableData = parseDataTable(restRaw);
+            if (tableData) {
+                tableHtml = renderDataTable(tableData);
+                // Strip the table data from the main text so it's not duplicated
+                restHtml = TP.escape(restRaw.split(/\[\[/)[0]).trim();
+            }
+        }
+
+        // Detect doc strings — triple-quoted blocks captured as a single arg
+        let docHtml = '';
+        const docMatch = restRaw.match(/\[\s*"""([\s\S]*?)"""\s*\]$/);
+        if (docMatch) {
+            docHtml = `<pre class="step-docstring">${TP.escape(docMatch[1].trim())}</pre>`;
+            restHtml = TP.escape(restRaw.replace(docMatch[0], '').trim());
+        }
 
         let stackTrace = '';
         if (step.errorStackTrace) {
@@ -147,14 +176,46 @@
         return `
             <div class="step">
                 <span class="step-icon ${iconCls}">${icon}</span>
-                <span class="step-keyword">${TP.escape(keyword)}</span>
+                <span class="step-keyword ${keywordLower}">${TP.escape(keyword)}</span>
                 <div class="step-text ${st === 'failed' ? 'fail' : ''}">
-                    ${TP.escape(rest)}
+                    ${restHtml}
+                    ${tableHtml}
+                    ${docHtml}
                     ${stackTrace}
                 </div>
                 <span class="step-dur">${TP.duration(step.durationMs)}</span>
             </div>
         `;
+    }
+
+    /* Parse "[[col1, col2], [v1, v2], [v3, v4]]" into rows array.
+     * Returns null if the format isn't parseable as a clean table. */
+    function parseDataTable(text) {
+        const m = text.match(/\[\[(.+?)\]\]$/);
+        if (!m) return null;
+        try {
+            // Split inner by "], [" to get rows
+            const inner = m[1];
+            const rows = inner.split(/\]\s*,\s*\[/).map(row =>
+                row.split(/\s*,\s*/).map(cell => cell.trim())
+            );
+            // Sanity check — all rows should have the same column count
+            if (rows.length < 2) return null;
+            const cols = rows[0].length;
+            if (!rows.every(r => r.length === cols)) return null;
+            return rows;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function renderDataTable(rows) {
+        const [header, ...body] = rows;
+        const thead = '<tr>' + header.map(c => `<th>${TP.escape(c)}</th>`).join('') + '</tr>';
+        const tbody = body.map(row =>
+            '<tr>' + row.map(c => `<td>${TP.escape(c)}</td>`).join('') + '</tr>'
+        ).join('');
+        return `<table class="step-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
     }
 
     async function toggleScenario(scenarioId) {
