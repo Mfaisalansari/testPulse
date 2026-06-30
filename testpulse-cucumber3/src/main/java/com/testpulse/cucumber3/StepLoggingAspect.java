@@ -29,7 +29,7 @@ import java.util.logging.Logger;
  * dashboard. Scenario-level boundaries still work because those come from
  * {@link ReportingHooks}.
  */
-@Aspect
+@Aspect("pertypewithin(*)")
 public class StepLoggingAspect {
 
     private static final Logger LOG = Logger.getLogger(StepLoggingAspect.class.getName());
