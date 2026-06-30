@@ -155,6 +155,13 @@ final class StepTextResolver {
             }
         }
 
+        // Map<String, String> — Cucumber gives you a Map directly for vertical
+        // 2-column tables. Render as a 2-column key-value table.
+        if (arg instanceof java.util.Map) {
+            String marker = singleMapMarker((java.util.Map<?, ?>) arg);
+            if (marker != null) return marker;
+        }
+
         // String value — add quotes back for {string} placeholders so the
         // displayed text matches the original Gherkin line.
         String s = String.valueOf(arg);
@@ -205,6 +212,23 @@ final class StepTextResolver {
                 sb.append("\"").append(jsonEscape(v == null ? "" : v.toString())).append("\"");
             }
             sb.append("]");
+        }
+        sb.append("]]");
+        return sb.toString();
+    }
+
+    private static String singleMapMarker(java.util.Map<?, ?> map) {
+        if (map.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder("[TABLE:[");
+        boolean first = true;
+        for (java.util.Map.Entry<?, ?> e : map.entrySet()) {
+            if (!first) sb.append(",");
+            first = false;
+            sb.append("[\"")
+              .append(jsonEscape(String.valueOf(e.getKey())))
+              .append("\",\"")
+              .append(jsonEscape(e.getValue() == null ? "" : String.valueOf(e.getValue())))
+              .append("\"]");
         }
         sb.append("]]");
         return sb.toString();
