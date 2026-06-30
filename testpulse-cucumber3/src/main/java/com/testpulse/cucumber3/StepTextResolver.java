@@ -19,20 +19,24 @@ import java.util.regex.Pattern;
  * where we don't have access to Cucumber's resolved step text (that would
  * require the EventListener path, which the user explicitly opted out of).
  *
- * <p>Strategy:
+ * <p>Handles both styles of Cucumber 3 step patterns:
  * <ul>
- *   <li>Cucumber expression placeholders ({@code {string}}, {@code {int}},
- *       etc.) are substituted with the argument values in declaration order</li>
- *   <li>If the pattern has no placeholders but the method has args (regex-
- *       style patterns), arguments are appended as a suffix</li>
- *   <li>If reflection can't find an annotation, returns just the method name</li>
+ *   <li><b>Cucumber expressions</b> with {@code {string}}, {@code {int}}
+ *       placeholders → replaced with the matching argument value</li>
+ *   <li><b>Regex patterns</b> with {@code (\w+)}, {@code ([^"]*)} capture
+ *       groups → replaced with the matching argument value, anchors
+ *       ({@code ^}, {@code $}) and common backslash escapes stripped</li>
  * </ul>
  *
- * <p>Result format: {@code "Given user enters \"alice\" as username"}
+ * <p>For a step defined as {@code @When("^user enters \"([^\"]*)\"$")}
+ * called from {@code When user enters "alice"}, this returns
+ * {@code When user enters "alice"} — the resolved Gherkin text, not the raw pattern.
  */
 final class StepTextResolver {
 
-    private static final Pattern PLACEHOLDER = Pattern.compile("\\{[^}]+}");
+    /** Matches either a Cucumber expression placeholder OR a regex capture group. */
+    private static final Pattern PLACEHOLDER_OR_GROUP =
+            Pattern.compile("\\{[^}]+}|\\([^)]*\\)");
 
     private StepTextResolver() {
     }
@@ -47,25 +51,67 @@ final class StepTextResolver {
         Object[] args = joinPoint.getArgs();
         String filled = substitutePlaceholders(info.pattern, args);
 
-        // If no placeholders were substituted but there are args, append them —
-        // happens for regex-style patterns like @Given("^user (.*) clicks (.*)$")
-        if (filled.equals(info.pattern) && args.length > 0) {
-            filled = info.pattern + " " + Arrays.toString(args);
+        // Strip regex anchors that look ugly in display text
+        filled = stripRegexCruft(filled);
+
+        // If nothing was substituted and there ARE args, append them so at
+        // least the values are visible (last-resort fallback for exotic patterns)
+        if (filled.equals(stripRegexCruft(info.pattern)) && args.length > 0) {
+            filled = filled + " " + formatArgs(args);
         }
 
-        return info.keyword + " " + filled;
+        return info.keyword + " " + filled.trim();
     }
 
     private static String substitutePlaceholders(String pattern, Object[] args) {
-        Matcher m = PLACEHOLDER.matcher(pattern);
+        Matcher m = PLACEHOLDER_OR_GROUP.matcher(pattern);
         StringBuffer sb = new StringBuffer();
         int idx = 0;
-        while (m.find() && idx < args.length) {
+        while (m.find()) {
+            String token = m.group();
+            // Non-capturing groups (?:...), lookaheads (?=...), lookbehinds (?<...)
+            // don't consume an argument — leave them in place.
+            if (token.startsWith("(?")) {
+                m.appendReplacement(sb, Matcher.quoteReplacement(token));
+                continue;
+            }
+            // Out of arguments — leave the placeholder as-is rather than crashing.
+            if (idx >= args.length) {
+                m.appendReplacement(sb, Matcher.quoteReplacement(token));
+                continue;
+            }
             String replacement = String.valueOf(args[idx++]);
+            // Cucumber's {string} type strips the surrounding quotes from the
+            // matched text. Add them back when the placeholder was {string}
+            // so the rendered output matches the original Gherkin line.
+            if (token.equals("{string}")) {
+                replacement = "\"" + replacement + "\"";
+            }
             m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
         }
         m.appendTail(sb);
         return sb.toString();
+    }
+
+    private static String stripRegexCruft(String s) {
+        // Strip leading ^ and trailing $ (regex anchors)
+        if (s.startsWith("^")) s = s.substring(1);
+        if (s.endsWith("$"))   s = s.substring(0, s.length() - 1);
+        // Unescape commonly-seen sequences. Conservative list — only the ones
+        // that occur in step patterns. We deliberately don't touch \d, \w, \s
+        // since those almost always come from un-substituted patterns.
+        s = s.replace("\\\"", "\"")
+             .replace("\\.", ".")
+             .replace("\\(", "(")
+             .replace("\\)", ")")
+             .replace("\\?", "?")
+             .replace("\\+", "+");
+        return s;
+    }
+
+    private static String formatArgs(Object[] args) {
+        if (args.length == 1) return "[" + args[0] + "]";
+        return Arrays.toString(args);
     }
 
     private static StepInfo extractStepInfo(Method method) {
