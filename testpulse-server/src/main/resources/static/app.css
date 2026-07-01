@@ -389,6 +389,48 @@ a:hover { text-decoration: underline; }
     flex-shrink: 0;
 }
 
+/* Screenshots — shown when a scenario fails and a ScreenshotProvider is wired */
+.screenshot-block {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--bg-primary);
+    border: 0.5px solid var(--border-light);
+    border-radius: var(--radius-md);
+}
+
+.screenshot-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.screenshot-thumb {
+    max-width: 280px;
+    max-height: 180px;
+    width: auto;
+    height: auto;
+    border-radius: var(--radius-sm);
+    border: 0.5px solid var(--border-medium);
+    cursor: zoom-in;
+    display: block;
+    object-fit: cover;
+    transition: border-color 0.15s, transform 0.15s;
+}
+
+.screenshot-thumb:hover {
+    border-color: var(--text-info);
+    transform: scale(1.02);
+}
+
+.screenshot-hint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 6px;
+}
+
 /* Gherkin convention: Given/When/Then have distinct colours, mirrors IDE syntax highlighting */
 .step-keyword.given { color: #6f5fa0; }
 .step-keyword.when  { color: #2d6997; }
