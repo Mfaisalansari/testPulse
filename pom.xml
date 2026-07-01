@@ -57,6 +57,8 @@
     <modules>
         <module>testpulse-core</module>
         <module>testpulse-cucumber3</module>
+        <module>testpulse-cucumber4</module>
+        <module>testpulse-cucumber5</module>
         <module>testpulse-testng</module>
         <module>testpulse-junit4</module>
         <module>testpulse-bom</module>
