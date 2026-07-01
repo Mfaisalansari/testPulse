@@ -28,6 +28,9 @@
             </div>
             <div id="run-meta" style="font-size: 13px; color: var(--text-secondary); margin-top: 8px; display: flex; flex-wrap: wrap; gap: 14px;"></div>
         </div>
+        <button class="filter-pill" id="export-btn" style="cursor:pointer;" title="Download self-contained HTML report">
+            ⬇ Export
+        </button>
     </div>
 
     <div class="metrics">
@@ -343,6 +346,12 @@
 
     document.querySelectorAll('#scenario-filters [data-status]').forEach(el => {
         el.addEventListener('click', () => setStatusFilter(el.getAttribute('data-status')));
+    });
+
+    document.getElementById('export-btn').addEventListener('click', () => {
+        const key = TP.apiKey();
+        if (!key) return;
+        window.location.href = `/api/runs/${encodeURIComponent(runId)}/export?apiKey=${encodeURIComponent(key)}`;
     });
 
     load().then(subscribeLive);
