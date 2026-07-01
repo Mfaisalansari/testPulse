@@ -38,6 +38,55 @@
         <span class="filter-pill active" data-lob="">All LOBs</span>
     </div>
 
+    <div class="filters" id="custom-filters">
+        <button class="filter-pill" id="add-filter-btn" style="cursor:pointer; border:0.5px dashed var(--border-medium);">+ Add filter</button>
+        <button class="filter-pill" id="save-filter-btn" style="cursor:pointer; display:none;">Save as view…</button>
+        <span id="active-filter-pills" style="display:contents;"></span>
+        <span id="saved-views" style="display:contents;"></span>
+    </div>
+
+    <!-- Filter builder modal -->
+    <div id="filter-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:9998; align-items:center; justify-content:center;">
+        <div style="background:var(--bg-primary); border-radius:var(--radius-lg); padding:20px; min-width:320px; max-width:420px; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="font-size:14px; font-weight:500; margin-bottom:12px;">New filter rule</div>
+            <div style="display:grid; grid-template-columns:1fr; gap:8px;">
+                <label style="font-size:11px; color:var(--text-secondary);">Field</label>
+                <select id="fb-field" class="filter-input" style="width:100%;">
+                    <option value="division">Division</option>
+                    <option value="release">Release</option>
+                    <option value="user">User</option>
+                    <option value="environment">Environment</option>
+                    <option value="branch">Branch</option>
+                    <option value="triggerSource">Trigger source</option>
+                    <option value="status">Status</option>
+                    <option value="id">Run ID</option>
+                    <option value="durationMs">Duration (ms)</option>
+                    <option value="scenariosTotal">Scenarios total</option>
+                    <option value="scenariosFailed">Scenarios failed</option>
+                    <option value="scenariosPassed">Scenarios passed</option>
+                    <option value="passRate">Pass rate (0-1)</option>
+                </select>
+                <label style="font-size:11px; color:var(--text-secondary);">Operator</label>
+                <select id="fb-op" class="filter-input" style="width:100%;">
+                    <option value="eq">equals</option>
+                    <option value="neq">not equals</option>
+                    <option value="contains">contains</option>
+                    <option value="startsWith">starts with</option>
+                    <option value="gt">greater than</option>
+                    <option value="lt">less than</option>
+                    <option value="gte">≥</option>
+                    <option value="lte">≤</option>
+                </select>
+                <label style="font-size:11px; color:var(--text-secondary);">Value</label>
+                <input id="fb-value" class="filter-input" style="width:100%;" placeholder="e.g. Europe, JulyRelease, 60000…">
+            </div>
+            <div style="display:flex; gap:8px; margin-top:16px; justify-content:flex-end;">
+                <button class="filter-pill" id="fb-cancel" style="cursor:pointer;">Cancel</button>
+                <button class="filter-pill active" id="fb-add" style="cursor:pointer;">Add filter</button>
+            </div>
+        </div>
+    </div>
+
     <div class="table-card">
         <div class="table-head" style="grid-template-columns: 100px 1fr 100px 110px 90px 80px;">
             <span>Status</span>
@@ -59,11 +108,49 @@
 (function() {
     const state = {
         runs: [],
-        lobByRunId: {},     // runId -> Set of LOBs from scenarios
+        lobByRunId: {},
         statusFilter: '',
         lobFilter: '',
         searchTerm: '',
+        customFilters: [],  // Array of {field, op, value} rules (AND-combined)
     };
+
+    const OP_LABEL = {
+        eq: '=', neq: '≠', contains: '~', startsWith: '^', gt: '>', lt: '<', gte: '≥', lte: '≤'
+    };
+
+    function evalRule(run, rule) {
+        let actual;
+        if (rule.field === 'passRate') {
+            const total = run.scenariosTotal || 0;
+            actual = total === 0 ? 0 : (run.scenariosPassed || 0) / total;
+        } else {
+            actual = run[rule.field];
+        }
+        const expected = rule.value;
+        const isNum = ['durationMs', 'scenariosTotal', 'scenariosFailed', 'scenariosPassed', 'passRate'].includes(rule.field);
+        if (isNum) {
+            const a = Number(actual), e = Number(expected);
+            switch (rule.op) {
+                case 'eq': return a === e;
+                case 'neq': return a !== e;
+                case 'gt': return a > e;
+                case 'lt': return a < e;
+                case 'gte': return a >= e;
+                case 'lte': return a <= e;
+                default: return true;
+            }
+        }
+        const a = String(actual || '').toLowerCase();
+        const e = String(expected || '').toLowerCase();
+        switch (rule.op) {
+            case 'eq': return a === e;
+            case 'neq': return a !== e;
+            case 'contains': return a.includes(e);
+            case 'startsWith': return a.startsWith(e);
+            default: return true;
+        }
+    }
 
     function showError(msg) {
         document.getElementById('banner-host').innerHTML =
@@ -131,6 +218,10 @@
                 const lobs = state.lobByRunId[r.id];
                 if (!lobs || !lobs.has(state.lobFilter)) return false;
             }
+            // Custom filter rules — ALL must match (AND)
+            for (const rule of state.customFilters) {
+                if (!evalRule(r, rule)) return false;
+            }
             if (state.searchTerm) {
                 const t = state.searchTerm.toLowerCase();
                 const hay = `${r.release || ''} ${r.user || ''} ${r.division || ''} ${r.environment || ''} ${r.id || ''}`.toLowerCase();
@@ -138,6 +229,66 @@
             }
             return true;
         });
+    }
+
+    function renderFilterPills() {
+        const host = document.getElementById('active-filter-pills');
+        host.innerHTML = state.customFilters.map((r, i) => `
+            <span class="filter-pill active" style="gap:6px;">
+                ${TP.escape(r.field)} ${OP_LABEL[r.op]} ${TP.escape(String(r.value))}
+                <span data-idx="${i}" style="cursor:pointer; margin-left:4px; font-weight:600;" title="Remove">×</span>
+            </span>
+        `).join('');
+        host.querySelectorAll('[data-idx]').forEach(x => {
+            x.addEventListener('click', e => {
+                const idx = parseInt(e.target.getAttribute('data-idx'), 10);
+                state.customFilters.splice(idx, 1);
+                renderFilterPills();
+                renderRuns();
+                document.getElementById('save-filter-btn').style.display =
+                    state.customFilters.length > 0 ? 'inline-flex' : 'none';
+            });
+        });
+        document.getElementById('save-filter-btn').style.display =
+            state.customFilters.length > 0 ? 'inline-flex' : 'none';
+    }
+
+    function renderSavedViews() {
+        const host = document.getElementById('saved-views');
+        const views = JSON.parse(localStorage.getItem('testpulse.savedViews') || '{}');
+        host.innerHTML = Object.keys(views).map(name => `
+            <span class="filter-pill" data-view="${TP.escape(name)}" style="cursor:pointer; background:var(--bg-info); color:var(--text-info);">
+                ★ ${TP.escape(name)}
+                <span data-del-view="${TP.escape(name)}" style="cursor:pointer; margin-left:6px; opacity:0.7;" title="Delete view">×</span>
+            </span>
+        `).join('');
+        host.querySelectorAll('[data-view]').forEach(el => {
+            el.addEventListener('click', e => {
+                if (e.target.hasAttribute('data-del-view')) return;
+                const name = el.getAttribute('data-view');
+                state.customFilters = JSON.parse(JSON.stringify(views[name]));
+                renderFilterPills();
+                renderRuns();
+            });
+        });
+        host.querySelectorAll('[data-del-view]').forEach(el => {
+            el.addEventListener('click', e => {
+                e.stopPropagation();
+                const name = el.getAttribute('data-del-view');
+                delete views[name];
+                localStorage.setItem('testpulse.savedViews', JSON.stringify(views));
+                renderSavedViews();
+            });
+        });
+    }
+
+    function openFilterBuilder() {
+        document.getElementById('fb-value').value = '';
+        document.getElementById('filter-modal').style.display = 'flex';
+        document.getElementById('fb-value').focus();
+    }
+    function closeFilterBuilder() {
+        document.getElementById('filter-modal').style.display = 'none';
     }
 
     function renderRunRow(run) {
@@ -214,6 +365,8 @@
             }));
             updateMetrics();
             updateLobFilters();
+            renderFilterPills();
+            renderSavedViews();
             renderRuns();
         } catch (e) {
             showError('Failed to load runs: ' + e.message);
@@ -266,6 +419,31 @@
 
     /* Refresh time-ago labels every 30s */
     setInterval(() => renderRuns(), 30000);
+
+    /* Filter builder modal wiring */
+    document.getElementById('add-filter-btn').addEventListener('click', openFilterBuilder);
+    document.getElementById('fb-cancel').addEventListener('click', closeFilterBuilder);
+    document.getElementById('filter-modal').addEventListener('click', e => {
+        if (e.target.id === 'filter-modal') closeFilterBuilder();
+    });
+    document.getElementById('fb-add').addEventListener('click', () => {
+        const field = document.getElementById('fb-field').value;
+        const op = document.getElementById('fb-op').value;
+        const value = document.getElementById('fb-value').value.trim();
+        if (!value) return;
+        state.customFilters.push({ field, op, value });
+        closeFilterBuilder();
+        renderFilterPills();
+        renderRuns();
+    });
+    document.getElementById('save-filter-btn').addEventListener('click', () => {
+        const name = prompt('Save this filter combination as:');
+        if (!name || !name.trim()) return;
+        const views = JSON.parse(localStorage.getItem('testpulse.savedViews') || '{}');
+        views[name.trim()] = JSON.parse(JSON.stringify(state.customFilters));
+        localStorage.setItem('testpulse.savedViews', JSON.stringify(views));
+        renderSavedViews();
+    });
 
     loadRuns().then(subscribeLive);
 })();
