@@ -10,6 +10,7 @@ import org.aspectj.lang.reflect.MethodSignature;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,6 +34,8 @@ import java.util.regex.Pattern;
  * {@code When user enters "alice"} — the resolved Gherkin text, not the raw pattern.
  */
 final class StepTextResolver {
+
+    private static final Logger LOG = Logger.getLogger(StepTextResolver.class.getName());
 
     /** Matches either a Cucumber expression placeholder OR a regex capture group. */
     private static final Pattern PLACEHOLDER_OR_GROUP =
@@ -121,22 +124,17 @@ final class StepTextResolver {
     private static String formatArg(Object arg, String placeholder) {
         if (arg == null) return "null";
 
-        // Cucumber 3 DataTable — use reflection to avoid a hard dependency on
-        // the DataTable class (testpulse-cucumber3 has Cucumber at provided
-        // scope; if it ever changes to optional, this still works).
-        String className = arg.getClass().getName();
-        if ("cucumber.api.DataTable".equals(className)
-                || "io.cucumber.datatable.DataTable".equals(className)) {
-            try {
-                java.lang.reflect.Method rawMethod = arg.getClass().getMethod("raw");
-                Object raw = rawMethod.invoke(arg);
-                if (raw instanceof java.util.List) {
-                    String marker = tableMarker((java.util.List<?>) raw);
-                    if (marker != null) return marker;
-                }
-            } catch (Throwable ignored) {
-                // Fall through to default toString
-            }
+        Class<?> argClass = arg.getClass();
+        String className = argClass.getName();
+        String simpleName = argClass.getSimpleName();
+
+        // Any class with "DataTable" in its name (matches cucumber.api.DataTable,
+        // io.cucumber.datatable.DataTable, internal subclasses, custom wrappers).
+        // Try raw() first (Cucumber 3.x), then asLists() (Cucumber 4+).
+        if (simpleName.contains("DataTable") || className.contains(".DataTable")) {
+            String marker = tryExtractTable(arg);
+            if (marker != null) return marker;
+            LOG.fine("DataTable-like class " + className + " — couldn't extract rows via raw() or asLists(); falling back to toString");
         }
 
         // List<List<String>> — the form Cucumber gives you if the step def
@@ -168,7 +166,36 @@ final class StepTextResolver {
         if ("{string}".equals(placeholder)) {
             return "\"" + s + "\"";
         }
+        LOG.finest("Unrecognised arg type " + className + ", using toString");
         return s;
+    }
+
+    /**
+     * Extract rows from a DataTable-like object via reflection. Tries
+     * {@code raw()} (Cucumber 3.x) then {@code asLists()} (Cucumber 4+).
+     * Returns the [TABLE:...] marker, or null if extraction failed.
+     */
+    @SuppressWarnings("unchecked")
+    private static String tryExtractTable(Object dataTable) {
+        for (String methodName : new String[] { "raw", "asLists", "cells" }) {
+            try {
+                java.lang.reflect.Method m = dataTable.getClass().getMethod(methodName);
+                Object result = m.invoke(dataTable);
+                if (result instanceof java.util.List) {
+                    java.util.List<?> rows = (java.util.List<?>) result;
+                    if (!rows.isEmpty() && rows.get(0) instanceof java.util.List) {
+                        String marker = tableMarker(rows);
+                        if (marker != null) return marker;
+                    }
+                }
+            } catch (NoSuchMethodException nsme) {
+                // Try next method name
+            } catch (Throwable t) {
+                LOG.fine("Failed to invoke " + methodName + "() on " + dataTable.getClass().getName()
+                        + ": " + t.getMessage());
+            }
+        }
+        return null;
     }
 
     private static String tableMarker(java.util.List<?> rows) {
