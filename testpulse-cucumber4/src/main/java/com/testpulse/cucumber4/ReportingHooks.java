@@ -144,12 +144,12 @@ public class ReportingHooks {
 
     /**
      * Cucumber 3's {@code Scenario.getStatus()} returns the
-     * {@code cucumber.api.Result.Type} enum (changed from String in
+     * {@code io.cucumber.plugin.event.Status} enum (changed from String in
      * Cucumber 2). The enum names ("PASSED", "FAILED", "SKIPPED", "PENDING",
      * "UNDEFINED", "AMBIGUOUS") align with our {@link Status} enum, so we
      * round-trip via {@code .name()} for a clean mapping.
      */
-    static Status normalizeStatus(cucumber.api.Result.Type cucumberStatus) {
+    static Status normalizeStatus(io.cucumber.plugin.event.Status cucumberStatus) {
         if (cucumberStatus == null) {
             return Status.UNDEFINED;
         }
