@@ -104,6 +104,11 @@ public final class ApiHandler implements HttpHandler {
                 if ("GET".equals(method)) { sse.register(seg[2], ex); return; }
             }
 
+            // /api/runs/{runId}/export — self-contained HTML report download
+            if (seg.length == 4 && "runs".equals(seg[1]) && "export".equals(seg[3])) {
+                if ("GET".equals(method)) { exportRun(ex, seg[2]); return; }
+            }
+
             // /api/runs/{runId}/scenarios — list or create
             if (seg.length == 4 && "runs".equals(seg[1]) && "scenarios".equals(seg[3])) {
                 String runId = seg[2];
@@ -307,6 +312,68 @@ public final class ApiHandler implements HttpHandler {
         resp.put("run", r.toMap());
         resp.put("scenarios", scenList);
         sendJson(ex, 200, Json.write(resp));
+    }
+
+    /**
+     * Generate a self-contained HTML report for a single run. All data
+     * (run metadata, scenarios, steps, screenshots) is embedded inline —
+     * the file opens in any browser without a server or network.
+     */
+    private void exportRun(HttpExchange ex, String runId) throws IOException {
+        Store.RunRecord r = store.getRun(runId);
+        if (r == null) { sendJson(ex, 404, errorJson("run not found")); return; }
+
+        List<Store.ScenarioRecord> scenarios = store.listScenariosForRun(runId);
+        Map<String, List<Store.StepRecord>> stepsByScen = new LinkedHashMap<String, List<Store.StepRecord>>();
+        for (Store.ScenarioRecord s : scenarios) {
+            stepsByScen.put(s.id, store.getStepsForScenario(s.id));
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<String, Object>();
+        payload.put("run", r.toMap());
+        List<Map<String, Object>> scenList = new ArrayList<Map<String, Object>>();
+        for (Store.ScenarioRecord s : scenarios) {
+            Map<String, Object> m = s.toMap();
+            List<Map<String, Object>> stepList = new ArrayList<Map<String, Object>>();
+            for (Store.StepRecord st : stepsByScen.get(s.id)) stepList.add(st.toMap());
+            m.put("steps", stepList);
+            scenList.add(m);
+        }
+        payload.put("scenarios", scenList);
+        String dataJson = Json.write(payload);
+
+        String css = readClasspath("static/app.css");
+        String template = readClasspath("static/export-template.html");
+        if (template == null) {
+            sendJson(ex, 500, errorJson("export template missing from server jar"));
+            return;
+        }
+        String html = template
+                .replace("/*__CSS__*/", css == null ? "" : css)
+                .replace("/*__DATA__*/", dataJson);
+
+        byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().add("Content-Type", "text/html; charset=utf-8");
+        ex.getResponseHeaders().add("Content-Disposition",
+                "attachment; filename=\"testpulse-" + runId + ".html\"");
+        ex.sendResponseHeaders(200, bytes.length);
+        OutputStream out = ex.getResponseBody();
+        out.write(bytes);
+        out.close();
+    }
+
+    private String readClasspath(String path) throws IOException {
+        InputStream in = ApiHandler.class.getClassLoader().getResourceAsStream(path);
+        if (in == null) return null;
+        try {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) baos.write(buf, 0, n);
+            return baos.toString("UTF-8");
+        } finally {
+            in.close();
+        }
     }
 
     private void listScenariosForRun(HttpExchange ex, String runId) throws IOException {
