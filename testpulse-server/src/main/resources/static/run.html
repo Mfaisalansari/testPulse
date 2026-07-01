@@ -231,6 +231,18 @@
 
         let stepsHtml = '';
         if (expanded) {
+            let screenshotHtml = '';
+            if (s.screenshotBase64) {
+                const url = 'data:image/png;base64,' + s.screenshotBase64;
+                screenshotHtml = `
+                    <div class="screenshot-block">
+                        <div class="screenshot-label">Screenshot at failure</div>
+                        <a href="${url}" target="_blank" rel="noopener" title="Open full size in new tab">
+                            <img class="screenshot-thumb" src="${url}" alt="Failure screenshot">
+                        </a>
+                    </div>
+                `;
+            }
             if (steps.length === 0) {
                 stepsHtml = `
                     <div class="scenario-body">
@@ -239,10 +251,11 @@
                                 ? 'Still running — steps will appear as they complete.'
                                 : 'AspectJ load-time weaving may not be active. See MIGRATION.md.'}
                         </div>
+                        ${screenshotHtml}
                     </div>
                 `;
             } else {
-                stepsHtml = `<div class="scenario-body">${steps.map(renderStep).join('')}</div>`;
+                stepsHtml = `<div class="scenario-body">${steps.map(renderStep).join('')}${screenshotHtml}</div>`;
             }
         }
 
