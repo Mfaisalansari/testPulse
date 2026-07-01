@@ -345,7 +345,10 @@ public final class ApiHandler implements HttpHandler {
             if (r.createdAt.toEpochMilli() < since) continue;
             if (r.scenariosTotal == 0) continue;
 
-            String dateBucket = r.createdAt.toString().substring(0, 10);
+            String dateBucket = r.createdAt
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate()
+                    .toString();
 
             // Sum per-LOB by walking scenarios
             for (Store.ScenarioRecord s : store.listScenariosForRun(r.id)) {
