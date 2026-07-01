@@ -178,6 +178,49 @@ body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 13
             </div>
           </div>
         </div>
+
+        <div class="dashboard">
+          <div class="card">
+            <h3>Step-level breakdown</h3>
+            <div id="step-donut-wrap" class="donut-wrap">
+              <svg class="donut" viewBox="0 0 42 42" id="donut2">
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#eef1f5" stroke-width="4"></circle>
+                <circle id="donut2-pass" cx="21" cy="21" r="15.915" fill="none" stroke="#4caf50" stroke-width="4" stroke-dasharray="0 100" stroke-dashoffset="25"></circle>
+                <circle id="donut2-fail" cx="21" cy="21" r="15.915" fill="none" stroke="#ef5350" stroke-width="4" stroke-dasharray="0 100" stroke-dashoffset="25"></circle>
+                <circle id="donut2-skip" cx="21" cy="21" r="15.915" fill="none" stroke="#9e9e9e" stroke-width="4" stroke-dasharray="0 100" stroke-dashoffset="25"></circle>
+              </svg>
+              <div class="donut-center">
+                <div class="n" id="steps-total">0</div>
+                <div class="l">steps</div>
+              </div>
+            </div>
+            <div class="legend">
+              <div class="legend-item"><span class="dot" style="background:#4caf50"></span> Passed <b id="sp-pass">0</b></div>
+              <div class="legend-item"><span class="dot" style="background:#ef5350"></span> Failed <b id="sp-fail">0</b></div>
+              <div class="legend-item"><span class="dot" style="background:#9e9e9e"></span> Skipped <b id="sp-skip">0</b></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Environment</h3>
+            <table style="width:100%; font-size:12px;" id="env-table"></table>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <h3>Scenario duration timeline</h3>
+          <div id="timeline-host"></div>
+        </div>
+
+        <div class="dashboard">
+          <div class="card">
+            <h3>Top failing scenarios</h3>
+            <div id="top-fail-host"></div>
+          </div>
+          <div class="card">
+            <h3>LOB breakdown</h3>
+            <div id="lob-host"></div>
+          </div>
+        </div>
       </div>
 
       <div class="view" id="view-tests">
@@ -244,12 +287,18 @@ function renderTopbar(title) {
 function renderDashboard() {
   const total = DATA.scenarios.length;
   const counts = {passed:0, failed:0, skipped:0};
-  let allSteps = 0, failedSteps = 0, totalDur = 0;
+  let allSteps = 0, passedSteps = 0, failedSteps = 0, skippedSteps = 0, totalDur = 0;
   DATA.scenarios.forEach(s => {
     const st = statusOf(s.status);
     if (counts[st]!==undefined) counts[st]++;
     if (s.durationMs) totalDur += s.durationMs;
-    (s.steps||[]).forEach(step => { allSteps++; if (statusOf(step.status)==='failed') failedSteps++; });
+    (s.steps||[]).forEach(step => {
+      allSteps++;
+      const ss = statusOf(step.status);
+      if (ss==='passed') passedSteps++;
+      else if (ss==='failed') failedSteps++;
+      else skippedSteps++;
+    });
   });
   const passPct = total===0 ? 0 : (counts.passed/total)*100;
   const failPct = total===0 ? 0 : (counts.failed/total)*100;
@@ -266,6 +315,98 @@ function renderDashboard() {
   document.getElementById('st-rate').textContent = total===0 ? '—' : Math.round(passPct)+'%';
   document.getElementById('st-avg').textContent = total===0 ? '—' : dur(totalDur/total);
   document.getElementById('st-failed').textContent = failedSteps;
+
+  // Step donut
+  const spTotal = allSteps || 1;
+  const spPass = (passedSteps/spTotal)*100;
+  const spFail = (failedSteps/spTotal)*100;
+  const spSkip = (skippedSteps/spTotal)*100;
+  document.getElementById('steps-total').textContent = allSteps;
+  document.getElementById('donut2-pass').setAttribute('stroke-dasharray', spPass+' '+(100-spPass));
+  document.getElementById('donut2-fail').setAttribute('stroke-dasharray', spFail+' '+(100-spFail));
+  document.getElementById('donut2-fail').setAttribute('stroke-dashoffset', 25 - spPass);
+  document.getElementById('donut2-skip').setAttribute('stroke-dasharray', spSkip+' '+(100-spSkip));
+  document.getElementById('donut2-skip').setAttribute('stroke-dashoffset', 25 - spPass - spFail);
+  document.getElementById('sp-pass').textContent = passedSteps;
+  document.getElementById('sp-fail').textContent = failedSteps;
+  document.getElementById('sp-skip').textContent = skippedSteps;
+
+  // Environment table
+  const r = DATA.run;
+  const rows = [
+    ['Division', r.division],
+    ['Release', r.release],
+    ['User', r.user],
+    ['Environment', r.environment],
+    ['Branch', r.branch],
+    ['Trigger source', r.triggerSource],
+    ['Started', r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'],
+    ['Finished', r.finishedAt ? new Date(r.finishedAt).toLocaleString() : '—'],
+    ['Threads used', new Set(DATA.scenarios.map(s => s.threadName).filter(Boolean)).size || 1],
+    ['Run ID', r.id]
+  ];
+  document.getElementById('env-table').innerHTML = rows.filter(x => x[1]).map(x =>
+    '<tr><td style="padding:6px 0; color:#7a8a9a;">'+esc(x[0])+'</td><td style="padding:6px 0; text-align:right; font-weight:500; color:#1c2938; font-family:monospace; font-size:11px;">'+esc(String(x[1]))+'</td></tr>'
+  ).join('');
+
+  // Duration timeline — horizontal bars
+  const maxDur = Math.max(...DATA.scenarios.map(s => s.durationMs || 0), 1);
+  const tlHost = document.getElementById('timeline-host');
+  tlHost.innerHTML = DATA.scenarios.map(s => {
+    const w = ((s.durationMs || 0) / maxDur) * 100;
+    const st = statusOf(s.status);
+    const color = st==='passed'?'#4caf50':(st==='failed'?'#ef5350':'#9e9e9e');
+    return '<div style="display:flex; align-items:center; gap:12px; padding:6px 0; font-size:12px;">' +
+      '<div style="width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#333;" title="'+esc(s.name)+'">'+esc(s.name||'—')+'</div>' +
+      '<div style="flex:1; height:14px; background:#eef1f5; border-radius:2px; position:relative;">' +
+        '<div style="width:'+w+'%; height:100%; background:'+color+'; border-radius:2px;"></div>' +
+      '</div>' +
+      '<div style="width:60px; text-align:right; color:#7a8a9a; font-family:monospace; font-size:11px;">'+dur(s.durationMs)+'</div>' +
+      '</div>';
+  }).join('') || '<div style="color:#7a8a9a; font-size:12px;">No scenarios.</div>';
+
+  // Top failing scenarios
+  const failed = DATA.scenarios.filter(s => statusOf(s.status)==='failed')
+    .sort((a,b) => (b.durationMs||0) - (a.durationMs||0)).slice(0, 5);
+  document.getElementById('top-fail-host').innerHTML = failed.length===0 ?
+    '<div style="color:#7a8a9a; font-size:12px;">No failed scenarios.</div>' :
+    failed.map(s => {
+      const firstFail = (s.steps||[]).find(st => statusOf(st.status)==='failed');
+      const reason = firstFail && firstFail.errorMessage ? firstFail.errorMessage : (firstFail ? firstFail.stepText : '');
+      return '<div style="padding:8px 0; border-bottom:1px solid #eef1f5; font-size:12px;">' +
+        '<div style="font-weight:500; color:#c62828;">'+esc(s.name||'—')+'</div>' +
+        '<div style="color:#7a8a9a; font-size:11px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="'+esc(reason)+'">'+esc(reason||'—')+'</div>' +
+        '</div>';
+    }).join('');
+
+  // LOB breakdown
+  const lobs = {};
+  DATA.scenarios.forEach(s => {
+    if (!s.lob) return;
+    if (!lobs[s.lob]) lobs[s.lob] = {passed:0, failed:0, total:0};
+    lobs[s.lob].total++;
+    const st = statusOf(s.status);
+    if (st==='passed') lobs[s.lob].passed++;
+    else if (st==='failed') lobs[s.lob].failed++;
+  });
+  const lobKeys = Object.keys(lobs).sort();
+  document.getElementById('lob-host').innerHTML = lobKeys.length===0 ?
+    '<div style="color:#7a8a9a; font-size:12px;">No LOBs tracked.</div>' :
+    lobKeys.map(k => {
+      const c = lobs[k];
+      const passW = (c.passed/c.total)*100;
+      const failW = (c.failed/c.total)*100;
+      return '<div style="padding:8px 0; border-bottom:1px solid #eef1f5; font-size:12px;">' +
+        '<div style="display:flex; justify-content:space-between; margin-bottom:4px;">' +
+          '<span style="font-weight:500;">'+esc(k)+'</span>' +
+          '<span style="color:#7a8a9a;">'+c.passed+'/'+c.total+' passed</span>' +
+        '</div>' +
+        '<div style="height:6px; background:#eef1f5; border-radius:2px; display:flex; overflow:hidden;">' +
+          '<div style="width:'+passW+'%; background:#4caf50;"></div>' +
+          '<div style="width:'+failW+'%; background:#ef5350;"></div>' +
+        '</div>' +
+        '</div>';
+    }).join('');
 }
 
 function renderStep(step) {
