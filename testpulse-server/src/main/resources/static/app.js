@@ -172,6 +172,30 @@ const TP = {
         return e;
     },
 
+    /* -------- Lightbox --------
+     * Full-viewport image viewer. Click outside image or press Esc to close.
+     */
+
+    showLightbox(url) {
+        const box = document.createElement('div');
+        box.className = 'lightbox';
+        box.innerHTML = `
+            <button class="lightbox-close" title="Close (Esc)">✕</button>
+            <img src="${url}" alt="Screenshot">
+        `;
+        const close = () => {
+            box.remove();
+            document.removeEventListener('keydown', onKey);
+        };
+        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        box.addEventListener('click', (e) => {
+            // Only close when clicking the backdrop, not the image itself
+            if (e.target === box || e.target.classList.contains('lightbox-close')) close();
+        });
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(box);
+    },
+
     /* -------- Header --------
      * Rendered into <div id="header"></div> on every page. Active nav item is
      * marked by the page's <body data-page="..."> attribute.
