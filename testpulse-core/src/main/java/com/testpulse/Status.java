@@ -15,7 +15,11 @@ public enum Status {
     SKIPPED,
     PENDING,
     UNDEFINED,
-    AMBIGUOUS;
+    AMBIGUOUS,
+    /** For custom step logging — informational messages that don't affect scenario outcome. */
+    INFO,
+    /** For custom step logging — warnings that don't fail the scenario. */
+    WARNING;
 
     /**
      * Parse a status string case-insensitively. Returns {@link #UNDEFINED}

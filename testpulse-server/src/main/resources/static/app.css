@@ -286,6 +286,8 @@ a:hover { text-decoration: underline; }
 .pill.run     { background: var(--bg-info);    color: var(--text-info); }
 .pill.empty   { background: var(--bg-tertiary); color: var(--text-tertiary); }
 .pill.skipped { background: var(--bg-secondary); color: var(--text-secondary); }
+.pill.info    { background: var(--bg-info);    color: var(--text-info); }
+.pill.warning { background: var(--bg-warning); color: var(--text-warning); }
 
 @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -382,6 +384,8 @@ a:hover { text-decoration: underline; }
 .step-icon.pass { color: var(--text-success); }
 .step-icon.fail { color: var(--text-danger); }
 .step-icon.skip { color: var(--text-tertiary); }
+.step-icon.info { color: var(--text-info); }
+.step-icon.warn { color: var(--text-warning); }
 
 .step-keyword {
     font-weight: 600;

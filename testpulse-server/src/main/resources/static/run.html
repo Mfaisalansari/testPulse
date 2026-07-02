@@ -134,8 +134,12 @@
 
     function renderStep(step) {
         const st = (step.status || '').toLowerCase();
-        const iconCls = st === 'passed' ? 'pass' : (st === 'failed' ? 'fail' : 'skip');
-        const icon = st === 'passed' ? '✓' : (st === 'failed' ? '✕' : '○');
+        let iconCls, icon;
+        if (st === 'passed')      { iconCls = 'pass'; icon = '✓'; }
+        else if (st === 'failed') { iconCls = 'fail'; icon = '✕'; }
+        else if (st === 'info')   { iconCls = 'info'; icon = 'ⓘ'; }
+        else if (st === 'warning'){ iconCls = 'warn'; icon = '⚠'; }
+        else                       { iconCls = 'skip'; icon = '○'; }
         const text = step.stepText || '';
 
         // Parse "Given|When|Then|And|But  <rest>"

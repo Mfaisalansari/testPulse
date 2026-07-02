@@ -131,6 +131,8 @@ const TP = {
             empty:   { cls: 'empty', label: 'Empty' },
             skipped: { cls: 'skipped', label: 'Skipped' },
             pending: { cls: 'skipped', label: 'Pending' },
+            info:    { cls: 'info',    label: 'Info' },
+            warning: { cls: 'warning', label: 'Warning' },
         };
         const m = map[s] || { cls: 'empty', label: status || 'Unknown' };
         const live = m.live ? '<span class="live-dot"></span>' : '';

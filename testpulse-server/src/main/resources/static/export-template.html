@@ -90,6 +90,8 @@ body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 13
 .step-icon.pass { background: #4caf50; }
 .step-icon.fail { background: #ef5350; }
 .step-icon.skip { background: #9e9e9e; }
+.step-icon.info { background: #3ba0e0; }
+.step-icon.warn { background: #f9a825; }
 .step-keyword { font-weight: 600; margin-right: 6px; }
 .step-keyword.given { color: #6f5fa0; }
 .step-keyword.when { color: #2d6997; }
@@ -411,8 +413,12 @@ function renderDashboard() {
 
 function renderStep(step) {
   const st = statusOf(step.status);
-  const iconCls = st==='passed'?'pass':(st==='failed'?'fail':'skip');
-  const icon = st==='passed'?'✓':(st==='failed'?'✕':'○');
+  let iconCls, icon;
+  if (st === 'passed')       { iconCls = 'pass'; icon = '✓'; }
+  else if (st === 'failed')  { iconCls = 'fail'; icon = '✕'; }
+  else if (st === 'info')    { iconCls = 'info'; icon = 'i'; }
+  else if (st === 'warning') { iconCls = 'warn'; icon = '!'; }
+  else                        { iconCls = 'skip'; icon = '○'; }
   const text = step.stepText || '';
   const parts = text.match(/^(Given|When|Then|And|But)\s+([\s\S]*)$/i);
   const kw = parts ? parts[1] : '';
