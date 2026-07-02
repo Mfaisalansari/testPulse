@@ -20,6 +20,7 @@
     </description>
 
     <properties>
+        <aspectj.version>1.9.7</aspectj.version>
         <cucumber.version>5.7.0</cucumber.version>
     </properties>
 
